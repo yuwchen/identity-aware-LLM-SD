@@ -803,7 +803,8 @@ Input:
         
         return [seg for seg, k in zip(segments, keep) if k]
 
-    def filter_short_segments(self, segments: List[List], min_duration: float = 0.1) -> List[List]:
+    @staticmethod
+    def filter_short_segments(segments: List[List], min_duration: float = 0.1) -> List[List]:
         """Filter out segments shorter than minimum duration.
         
         Args:

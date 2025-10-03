@@ -346,7 +346,6 @@ class DiarizationRefiner:
         
         for seg in tqdm(segments, desc="Re-transcribing"):
             seg_start, seg_end, speaker, text, word_times = seg
-            print(seg_end-seg_start, sr)
             # Re-transcribe if text is empty
             if text.replace(" ", "") == '':
                 segment_audio = audio_array[int(seg_start * sr):int(seg_end * sr)]

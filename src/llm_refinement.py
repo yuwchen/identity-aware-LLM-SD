@@ -32,7 +32,8 @@ class DiarizationRefiner:
         asr_model = None,
         speaker_model_name: str = "nvidia/speakerverification_en_titanet_large",
         asr_model_name: str = "nvidia/parakeet-tdt-0.6b-v2",
-        openai_model: str = "gpt-4.1"
+        openai_model: str = "gpt-4.1",
+        processing_sample_rate: int = 16000,
     ):
         """Initialize refinement models.
         
@@ -48,6 +49,8 @@ class DiarizationRefiner:
         self.device = torch.device(
             "cuda" if device == "auto" and torch.cuda.is_available() else device
         )
+
+        self.processing_sample_rate = processing_sample_rate
         
         # Use provided models or load new ones
         if speaker_model is not None:
@@ -343,12 +346,11 @@ class DiarizationRefiner:
         
         for seg in tqdm(segments, desc="Re-transcribing"):
             seg_start, seg_end, speaker, text, word_times = seg
-            
+            print(seg_end-seg_start, sr)
             # Re-transcribe if text is empty
             if text.replace(" ", "") == '':
                 segment_audio = audio_array[int(seg_start * sr):int(seg_end * sr)]
                 sf.write(temp_file, segment_audio, sr)
-                
                 output = self.asr_model.transcribe(
                     temp_file, 
                     batch_size=1, 
@@ -379,7 +381,6 @@ class DiarizationRefiner:
             if speaker == 'Unknown':
                 segment_audio = audio_array[int(seg_start * sr):int(seg_end * sr)]
                 sf.write(temp_file, segment_audio, sr)
-                
                 output = self.asr_model.transcribe(
                     temp_file, 
                     batch_size=1, 
@@ -802,6 +803,18 @@ Input:
                         break
         
         return [seg for seg, k in zip(segments, keep) if k]
+
+    def filter_short_segments(self, segments: List[List], min_duration: float = 0.1) -> List[List]:
+        """Filter out segments shorter than minimum duration.
+        
+        Args:
+            segments: List of segments [start, end, speaker, text, word_times]
+            min_duration: Minimum segment duration in seconds (default: 0.1)
+            
+        Returns:
+            Filtered list of segments
+        """
+        return [seg for seg in segments if seg[1] - seg[0] >= min_duration]
     
     def process(
         self,
@@ -841,28 +854,31 @@ Input:
         
         print("Merging adjacent segments (initial)...")
         merged = self.merge_segments(merged, max_gap=0.01)
+
+        # Filter out segments too short to be processed
+        merged = self.filter_short_segments(merged)
         
         if enable_retranscribe:
             print("Re-transcribing segments...")
-            merged = self.retranscribe_segments(merged, audio_array, sample_rate)
+            merged = self.retranscribe_segments(merged, audio_array, self.processing_sample_rate)
             print("Merging adjacent segments (post re-transcription)...")
             merged = self.merge_segments(merged, max_gap=0.25)
 
         print("Building speaker database...")
         faiss_index, speaker_labels = self.build_speaker_database(
-            diarization, audio_array, num_speakers, sample_rate
+            diarization, audio_array, num_speakers, self.processing_sample_rate
         )
 
         print("Re-verifying speakers...")
         reverified = self.reverify_speakers(
             merged, audio_array, faiss_index, speaker_labels,
-            sample_rate, num_retrieval
+            self.processing_sample_rate, num_retrieval
         )
         
         if enable_gpt:
             print("Refining with GPT...")
             refined, _ = self.refine_with_gpt(
-                merged, reverified, audio_array, sample_rate,
+                merged, reverified, audio_array, self.processing_sample_rate,
                 gpt_window_size, gpt_confidence_threshold
             )
         else:

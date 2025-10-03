@@ -11,7 +11,7 @@ from pydub import AudioSegment
 
 from src.asr import AudioTranscriber
 from src.diarization import AudioDiarizer
-from src.refinement import DiarizationRefiner
+from src.llm_refinement import DiarizationRefiner
 from src.utils import create_directory
 
 
